@@ -1,7 +1,8 @@
-
 fn is_prime(x: u32) -> bool {
-    for d in 2..x/2 {
-        if x % d == 0 { return false; }
+    for d in 2..x / 2 {
+        if x % d == 0 {
+            return false;
+        }
     }
 
     true
@@ -10,22 +11,24 @@ fn is_prime(x: u32) -> bool {
 fn next_prime(x: u16) -> Option<u16> {
     let mut u: u32 = x as u32;
     while u < u16::MAX as u32 {
-        if is_prime(u) { return Some(u as u16); }
+        if is_prime(u) {
+            return Some(u as u16);
+        }
         u += 1;
     }
 
     None
 }
 
-#[derive (Debug)]
+#[derive(Debug)]
 enum MathErr {
     Overflow,
 }
 
-use std::panic;
 use std::io::{self, Write};
+use std::panic;
 
-fn add_u32 (x: u32, y: u32) -> Result<u32, MathErr> {
+fn add_u32(x: u32, y: u32) -> Result<u32, MathErr> {
     let res: u64 = x as u64 + y as u64;
     match u32::try_from(res) {
         Ok(res) => Ok(res),
@@ -33,7 +36,7 @@ fn add_u32 (x: u32, y: u32) -> Result<u32, MathErr> {
     }
 }
 
-fn mul_u32 (x: u32, y: u32) -> Result<u32, MathErr> {
+fn mul_u32(x: u32, y: u32) -> Result<u32, MathErr> {
     let res: u64 = x as u64 * y as u64;
     match u32::try_from(res) {
         Ok(res) => Ok(res),
@@ -41,7 +44,7 @@ fn mul_u32 (x: u32, y: u32) -> Result<u32, MathErr> {
     }
 }
 
-fn add_u32_panic (x: u32, y: u32) -> Result<u32, MathErr> {
+fn add_u32_panic(x: u32, y: u32) -> Result<u32, MathErr> {
     let res: u64 = x as u64 + y as u64;
     match u32::try_from(res) {
         Ok(res) => Ok(res),
@@ -49,7 +52,7 @@ fn add_u32_panic (x: u32, y: u32) -> Result<u32, MathErr> {
     }
 }
 
-fn mul_u32_panic (x: u32, y: u32) -> Result<u32, MathErr> {
+fn mul_u32_panic(x: u32, y: u32) -> Result<u32, MathErr> {
     let res: u64 = x as u64 * y as u64;
     match u32::try_from(res) {
         Ok(res) => Ok(res),
@@ -63,7 +66,7 @@ fn mul_of_sum(x: u32, y: u32, z: u32) -> Result<u32, MathErr> {
     Ok(prod)
 }
 
-#[derive (Debug)]
+#[derive(Debug)]
 enum FuncError {
     NotAscii,
     NotDigit,
@@ -96,7 +99,9 @@ fn print_char(ch: char) -> Result<char, (FuncError, char)> {
 }
 
 fn char_to_number(ch: char) -> Result<u8, (FuncError, char)> {
-    if !ch.is_ascii() { return Err((FuncError::NotAscii , ch)); }
+    if !ch.is_ascii() {
+        return Err((FuncError::NotAscii, ch));
+    }
     match ch {
         '0'..='9' => Ok(ch as u8 - b'0'),
         _ => Err((FuncError::NotDigit, ch)),
@@ -104,7 +109,9 @@ fn char_to_number(ch: char) -> Result<u8, (FuncError, char)> {
 }
 
 fn char_to_number_hex(ch: char) -> Result<u8, (FuncError, char)> {
-    if !ch.is_ascii() { return Err((FuncError::NotAscii , ch)); }
+    if !ch.is_ascii() {
+        return Err((FuncError::NotAscii, ch));
+    }
     match ch {
         '0'..='9' => Ok(ch as u8 - b'0'),
         'A'..='F' => Ok((ch as u8 - b'A') + 10u8),
@@ -167,7 +174,7 @@ fn text_to_lowercase_first(text: &str) -> Result<String, FuncError> {
 
     modi.push(first);
     modi.extend(chars);
-    
+
     Ok(modi)
 }
 
@@ -182,7 +189,7 @@ fn text_to_uppercase_first(text: &str) -> Result<String, FuncError> {
 
     modi.push(first);
     modi.extend(chars);
-    
+
     Ok(modi)
 }
 
@@ -221,13 +228,17 @@ fn main() {
     let result = panic::catch_unwind(|| mul_u32_panic(a, b));
     match result {
         Ok(res) => println!("The multiplication of {a} and {b} is {res:?}."),
-        Err(_) => println!("Program panicked. The multiplication of {a} and {b} counldn't be computed"),
+        Err(_) => {
+            println!("Program panicked. The multiplication of {a} and {b} counldn't be computed")
+        }
     }
 
     let result = panic::catch_unwind(|| add_u32_panic(b, c));
     match result {
         Ok(res) => println!("The multiplication of {b} and {c} is {res:?}."),
-        Err(_) => println!("Program panicked. The multiplication of {b} and {c} counldn't be computed"),
+        Err(_) => {
+            println!("Program panicked. The multiplication of {b} and {c} counldn't be computed")
+        }
     }
 
     println!("P3 tests:");
@@ -248,12 +259,16 @@ fn main() {
 
     match mul_u32(x, y) {
         Ok(a) => println!("The multiplication of {x} and {y} is {a}."),
-        Err(a) => println!("The multiplication of {x} and {y} counldn't be computed. Reason: {a:?}"),
+        Err(a) => {
+            println!("The multiplication of {x} and {y} counldn't be computed. Reason: {a:?}")
+        }
     };
 
     match mul_u32(z, y) {
         Ok(a) => println!("The multiplication of {z} and {y} is {a}."),
-        Err(a) => println!("The multiplication of {z} and {y} counldn't be computed. Reason: {a:?}"),
+        Err(a) => {
+            println!("The multiplication of {z} and {y} counldn't be computed. Reason: {a:?}")
+        }
     };
 
     match mul_of_sum(x, y, t) {
@@ -267,7 +282,7 @@ fn main() {
     };
 
     println!("P4 tests:");
-    
+
     match to_uppercase('b') {
         Ok(c) => println!("Uppercase of 'b' is '{c}'."),
         Err(e) => print_error(e),
@@ -280,7 +295,6 @@ fn main() {
         Ok(c) => println!("Uppercase of '.' is '{c}'."),
         Err(e) => print_error(e),
     }
-
 
     match to_lowercase('G') {
         Ok(c) => println!("Lowercase of 'G' is '{c}'."),
@@ -330,17 +344,20 @@ fn main() {
     let mut input = String::new();
     loop {
         input.clear();
-        
+
         print!("Enter text:");
         let _ = io::stdout().flush();
-        
-        io::stdin().read_line(&mut input).expect("Failed to read line");
+
+        io::stdin()
+            .read_line(&mut input)
+            .expect("Failed to read line");
         let parts: Vec<&str> = input.split_whitespace().collect();
 
         if parts.len() < 2 {
-            println!("Incorrect usage: U/u/Uu/uU <text> \n U makes all text uppercase \n l makes all text lowercase \n F makes only the first letter Uppercase \n f makes only the first letter lowercase \n Q to quit");
+            println!(
+                "Incorrect usage: U/u/Uu/uU <text> \n U makes all text uppercase \n l makes all text lowercase \n F makes only the first letter Uppercase \n f makes only the first letter lowercase \n Q to quit"
+            );
         }
-
 
         match parts[0] {
             "U" => {
