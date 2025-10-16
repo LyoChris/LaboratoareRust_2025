@@ -1,7 +1,6 @@
 [package]
-name = "lab_1"
+name = "lab_3"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-

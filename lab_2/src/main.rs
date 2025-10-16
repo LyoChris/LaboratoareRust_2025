@@ -77,7 +77,7 @@ fn float_to_str(x: f32) -> String {
 
     num.push('.');
 
-    let mut fra_d = String::new();
+    let mut fra_d = String::new();  
     let mut i = 0;
 
     while i < 3 {
