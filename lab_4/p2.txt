@@ -1,0 +1,2 @@
+In Rust we trust,
+Cause Logica approved the code
