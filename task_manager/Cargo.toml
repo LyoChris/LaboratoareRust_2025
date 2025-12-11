@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 sysinfo = "0.37.2"
+eframe = "0.29"
+egui_extras = {version = "0.29", features = ["all_loaders"]}
