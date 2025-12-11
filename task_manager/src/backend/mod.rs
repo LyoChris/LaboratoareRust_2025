@@ -12,6 +12,12 @@ pub struct ProcessInfo {
     pub user: String,
 }
 
+pub struct SysStats {
+    pub processes: Vec<ProcessInfo>,
+    pub cpu: u64,
+    pub mem: u64
+}
+
 pub struct Monitor {
     sys: System,
     users: Users,
@@ -19,7 +25,7 @@ pub struct Monitor {
 
 pub trait InfoGetter {
     fn new() -> Self;
-    fn system_info_update(&mut self) -> Vec<ProcessInfo>;
+    fn system_info_update(&mut self) -> SysStats;
 }
 
 impl InfoGetter for Monitor {
@@ -40,7 +46,7 @@ impl InfoGetter for Monitor {
         Self { sys, users }
     }
 
-    fn system_info_update(&mut self) -> Vec<ProcessInfo> {
+    fn system_info_update(&mut self) -> SysStats  {
         self.sys.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
@@ -95,6 +101,9 @@ impl InfoGetter for Monitor {
             process_info.push(info);
         }
 
-        process_info
+        let cpu = self.sys.global_cpu_usage() as u64;
+        let mem = ((self.sys.used_memory() as f64 / self.sys.total_memory() as f64) * 100.0) as u64;
+
+        SysStats { processes: process_info, cpu, mem }
     }
 }

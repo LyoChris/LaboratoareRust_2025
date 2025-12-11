@@ -1,25 +1,46 @@
 mod backend;
-use backend::{Monitor, ProcessInfo, InfoGetter};
-use eframe::egui::{CentralPanel, Context, FontFamily, FontId, TextStyle};
+use backend::{Monitor, InfoGetter, SysStats};
+use eframe::egui::{self, CentralPanel, Context, FontFamily, FontId, TextStyle};
 use egui_extras::{Column, TableBuilder};
+use::std::{thread, thread::sleep, time, cmp::Ordering};
+use::std::sync::mpsc::{self, Receiver};
 
 struct TaskManager {
-    monitor: Monitor,
-    processes: Vec<ProcessInfo>,
+    rx: Receiver<SysStats>,
+    stats: SysStats
 }
 
 impl Default for TaskManager {
     fn default() -> Self {
-        let mut monitor = Monitor::new();
-        let processes = monitor.system_info_update();
+        let (tx, rx) = mpsc::channel();
 
-        Self { monitor, processes }
+        thread::spawn(move || {
+            let mut monitor = Monitor::new();
+
+            loop {
+                let processes = monitor.system_info_update();
+                if tx.send(processes).is_err() {
+                    break;
+                }
+                sleep(time::Duration::from_millis(1000));
+            }
+        });
+
+        Self { rx, stats: SysStats {processes: Vec::new(), cpu: 0, mem: 0} }
     }
 }
 
 impl eframe::App for TaskManager {
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        self.processes = self.monitor.system_info_update();
+        if let Ok(data) = self.rx.try_recv() {
+            self.stats = data;
+            println!("Refresh done");
+        }
+
+        //default sort;
+        self.stats.processes.sort_by(|a,b | {
+            b.cpu.partial_cmp(&a.cpu).unwrap_or(Ordering::Equal)
+        });
         set_styles(ctx);
         CentralPanel::default().show(ctx, |ui| {
             ui.heading("Hello from aplication");
@@ -31,41 +52,51 @@ impl eframe::App for TaskManager {
                 .vscroll(true)
                 .column(Column::initial(width * 0.2).resizable(true))
                 .column(Column::initial(width * 0.1).resizable(true))
-                .column(Column::initial(width * 0.1).resizable(true))
-                .column(Column::initial(width * 0.3).resizable(true))
                 .column(Column::initial(width * 0.2).resizable(true))
+                .column(Column::initial(width * 0.3).resizable(true))
+                .column(Column::initial(width * 0.15).resizable(true))
                 .header(20.0, |mut header| {
                     header.col(|ui| {
-                        ui.heading("Process Name");
+                        ui.heading("Name");
                         ui.separator();
                     });
                     header.col(|ui| {
-                        ui.heading("CPU usage");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.heading("CPU");
+                            ui.label(format!("{}%", self.stats.cpu));
+                        });
                         ui.separator();
                     });
                     header.col(|ui| {
-                        ui.heading("Memory usage");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.heading("Memory");
+                            ui.label(format!("{}%", self.stats.mem));
+                        });
                         ui.separator();
                     });
                     header.col(|ui| {
-                        ui.heading("Path");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.heading("Path");
+                        });
                         ui.separator();
                     });
                     header.col(|ui| {
-                        ui.heading("Username");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.heading("Username");
+                        });
                         ui.separator();
                     });
                 })
                 .body(|body| {
                     let height = 50.0;
-                    let num = self.processes.len();
+                    let num = self.stats.processes.len();
 
                     body.rows(height, num, |mut row| {
                         let index = row.index();
-                        let process = &self.processes[index];
+                        let process = &self.stats.processes[index];
 
                         row.col(|ui| {
-                            ui.label(format!("{}", process.name));
+                            ui.label(process.name.to_string());
                         });
 
                         // Col 2: CPU
@@ -80,16 +111,18 @@ impl eframe::App for TaskManager {
 
                         // Col 4: Path
                         row.col(|ui| {
-                            ui.label(format!("{}", process.exe));
+                            ui.label(process.exe.to_string());
                         });
 
                         // Col 5: Username
                         row.col(|ui| {
-                            ui.label(format!("{}", process.user));
+                            ui.label(process.user.to_string());
                         });
                     });
                 });
         });
+
+        ctx.request_repaint_after(time::Duration::from_millis(1000));
     }
 }
 
@@ -97,7 +130,7 @@ fn set_styles(ctx: &Context) {
     let mut style = (*ctx.style()).clone();
     style
         .text_styles
-        .insert(TextStyle::Heading, FontId::new(30.0, FontFamily::Monospace));
+        .insert(TextStyle::Heading, FontId::new(20.0, FontFamily::Monospace));
 
     ctx.set_style(style);
 }
@@ -117,15 +150,4 @@ fn main() -> Result<(), eframe::Error> {
         options,
         Box::new(|_cc| Ok(Box::<TaskManager>::default())),
     )
-
-    // for process in moni.system_info_update() {
-    //     println!("PID: {} | Parent PID: {} | Name: {} | CPU: {:.2}% | Memory: {} bytes | EXE: {} | User: {}",
-    //              process.pid,
-    //              process.parent_pid,
-    //              process.name,
-    //              process.cpu,
-    //              process.memory,
-    //              process.exe,
-    //              process.user);
-    // }
 }
