@@ -1,13 +1,164 @@
 mod backend;
-use backend::{Monitor, InfoGetter, SysStats};
+use crate::backend::gatherer::{InfoGetter, Monitor, ProcessInfo, SysStats};
+use ::std::sync::mpsc::{self, Receiver};
+use ::std::{cmp::Ordering, collections::HashSet, env::var, thread, thread::sleep, time};
 use eframe::egui::{self, CentralPanel, Context, FontFamily, FontId, TextStyle};
 use egui_extras::{Column, TableBuilder};
-use::std::{thread, thread::sleep, time, cmp::Ordering};
-use::std::sync::mpsc::{self, Receiver};
+
+#[derive(PartialEq, Clone, Copy)]
+enum SortCriteria {
+    Cpu,
+    Memory,
+    Name,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum FilterType {
+    All,
+    User,
+    System,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum SortType {
+    Ascending,
+    Descending,
+}
 
 struct TaskManager {
     rx: Receiver<SysStats>,
-    stats: SysStats
+    stats: SysStats,
+    criteria: SortCriteria,
+    sort_type: SortType,
+    filter: FilterType,
+    user: String,
+    open: HashSet<u32>,
+}
+
+impl TaskManager {
+    fn data_table_view<'a>(
+        processes: &'a [ProcessInfo],
+        crit: SortCriteria,
+        sort_type: SortType,
+        filter: FilterType,
+        username: &String,
+    ) -> Vec<&'a ProcessInfo> {
+        let mut view: Vec<&ProcessInfo> = Vec::new();
+        let mut list_from_tree: Vec<&ProcessInfo> = Vec::new();
+
+        fn dfs<'a>(process: &'a [ProcessInfo], res: &mut Vec<&'a ProcessInfo>) {
+            for proc in process.iter() {
+                res.push(proc);
+                dfs(&proc.child, res);
+            }
+        }
+
+        dfs(processes, &mut list_from_tree);
+
+        for proc in list_from_tree {
+            match (filter, &proc.user) {
+                (FilterType::All, _) => view.push(proc),
+                (FilterType::User, user) if user == username => view.push(proc),
+                (FilterType::System, user) if user != username => view.push(proc),
+                _ => (),
+            }
+        }
+
+        view.sort_by(|a, b| match (crit, sort_type) {
+            (SortCriteria::Cpu, SortType::Descending) => {
+                b.cpu.partial_cmp(&a.cpu).unwrap_or(Ordering::Equal)
+            }
+            (SortCriteria::Cpu, SortType::Ascending) => {
+                a.cpu.partial_cmp(&b.cpu).unwrap_or(Ordering::Equal)
+            }
+            (SortCriteria::Memory, SortType::Descending) => {
+                b.memory.partial_cmp(&a.memory).unwrap_or(Ordering::Equal)
+            }
+            (SortCriteria::Memory, SortType::Ascending) => {
+                a.memory.partial_cmp(&b.memory).unwrap_or(Ordering::Equal)
+            }
+            (SortCriteria::Name, SortType::Ascending) => {
+                b.name.partial_cmp(&a.name).unwrap_or(Ordering::Equal)
+            }
+            (SortCriteria::Name, SortType::Descending) => {
+                a.name.partial_cmp(&b.name).unwrap_or(Ordering::Equal)
+            }
+        });
+
+        view
+    }
+    fn table_drawer(ui: &mut egui::Ui, viewer: &[&ProcessInfo], stats: &SysStats) {
+        let width = ui.available_width();
+
+        TableBuilder::new(ui)
+            .vscroll(true)
+            .column(Column::initial(width * 0.2).resizable(true))
+            .column(Column::initial(width * 0.1).resizable(true))
+            .column(Column::initial(width * 0.2).resizable(true))
+            .column(Column::initial(width * 0.3).resizable(true))
+            .column(Column::initial(width * 0.15).resizable(true))
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.heading("Name");
+                    ui.separator();
+                });
+                header.col(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.heading("CPU");
+                        ui.label(format!("{:.1}%", stats.cpu));
+                    });
+                    ui.separator();
+                });
+                header.col(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.heading("Memory");
+                        ui.label(format!("{:.1}%", stats.mem));
+                    });
+                    ui.separator();
+                });
+                header.col(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.heading("Path");
+                    });
+                    ui.separator();
+                });
+                header.col(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.heading("Username");
+                    });
+                    ui.separator();
+                });
+            })
+            .body(|body| {
+                let height = 50.0;
+                let num = viewer.len();
+
+                body.rows(height, num, |mut row| {
+                    let index = row.index();
+                    let process = viewer[index];
+
+                    row.col(|ui| {
+                        ui.label(process.name.to_string());
+                    });
+
+                    row.col(|ui| {
+                        ui.label(format!("{:.2}%", process.cpu));
+                    });
+
+                    row.col(|ui| {
+                        ui.label(format!("{:.1} MB", process.memory));
+                    });
+
+                    row.col(|ui| {
+                        ui.label(process.exe.to_string());
+                    });
+
+                    row.col(|ui| {
+                        ui.label(process.user.to_string());
+                    });
+                });
+            });
+    }
 }
 
 impl Default for TaskManager {
@@ -26,7 +177,21 @@ impl Default for TaskManager {
             }
         });
 
-        Self { rx, stats: SysStats {processes: Vec::new(), cpu: 0, mem: 0} }
+        let user = var("USER").unwrap_or_else(|_| "unknown".to_string());
+
+        Self {
+            rx,
+            stats: SysStats {
+                processes: Vec::new(),
+                cpu: 0.0,
+                mem: 0.0,
+            },
+            criteria: SortCriteria::Cpu,
+            sort_type: SortType::Descending,
+            filter: FilterType::User,
+            user,
+            open: HashSet::new(),
+        }
     }
 }
 
@@ -37,89 +202,97 @@ impl eframe::App for TaskManager {
             println!("Refresh done");
         }
 
-        //default sort;
-        self.stats.processes.sort_by(|a,b | {
-            b.cpu.partial_cmp(&a.cpu).unwrap_or(Ordering::Equal)
-        });
         set_styles(ctx);
         CentralPanel::default().show(ctx, |ui| {
             ui.heading("Hello from aplication");
             ui.separator();
 
-            let width = ui.available_width();
+            ui.horizontal(|ui| {
+                let arrow = if self.sort_type == SortType::Ascending {
+                    "^"
+                } else {
+                    "v"
+                };
+                ui.label("Sort by:".to_string());
+                let cpu_label = match self.criteria {
+                    SortCriteria::Cpu => format!("{} CPU", arrow),
+                    _ => "CPU".to_string(),
+                };
+                let mem_label = match self.criteria {
+                    SortCriteria::Memory => format!("{} RAM", arrow),
+                    _ => "RAM".to_string(),
+                };
+                let name_label = match self.criteria {
+                    SortCriteria::Name => format!("{} Name", arrow),
+                    _ => "Name".to_string(),
+                };
+                if ui
+                    .selectable_label(self.criteria == SortCriteria::Cpu, cpu_label)
+                    .clicked()
+                {
+                    self.criteria = SortCriteria::Cpu;
+                    match self.sort_type {
+                        SortType::Ascending => self.sort_type = SortType::Descending,
+                        SortType::Descending => self.sort_type = SortType::Ascending,
+                    };
+                };
 
-            TableBuilder::new(ui)
-                .vscroll(true)
-                .column(Column::initial(width * 0.2).resizable(true))
-                .column(Column::initial(width * 0.1).resizable(true))
-                .column(Column::initial(width * 0.2).resizable(true))
-                .column(Column::initial(width * 0.3).resizable(true))
-                .column(Column::initial(width * 0.15).resizable(true))
-                .header(20.0, |mut header| {
-                    header.col(|ui| {
-                        ui.heading("Name");
-                        ui.separator();
-                    });
-                    header.col(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.heading("CPU");
-                            ui.label(format!("{}%", self.stats.cpu));
-                        });
-                        ui.separator();
-                    });
-                    header.col(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.heading("Memory");
-                            ui.label(format!("{}%", self.stats.mem));
-                        });
-                        ui.separator();
-                    });
-                    header.col(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.heading("Path");
-                        });
-                        ui.separator();
-                    });
-                    header.col(|ui| {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.heading("Username");
-                        });
-                        ui.separator();
-                    });
-                })
-                .body(|body| {
-                    let height = 50.0;
-                    let num = self.stats.processes.len();
+                if ui
+                    .selectable_label(self.criteria == SortCriteria::Memory, mem_label)
+                    .clicked()
+                {
+                    self.criteria = SortCriteria::Memory;
+                    match self.sort_type {
+                        SortType::Ascending => self.sort_type = SortType::Descending,
+                        SortType::Descending => self.sort_type = SortType::Ascending,
+                    };
+                }
 
-                    body.rows(height, num, |mut row| {
-                        let index = row.index();
-                        let process = &self.stats.processes[index];
+                if ui
+                    .selectable_label(self.criteria == SortCriteria::Name, name_label)
+                    .clicked()
+                {
+                    self.criteria = SortCriteria::Name;
+                    match self.sort_type {
+                        SortType::Ascending => self.sort_type = SortType::Descending,
+                        SortType::Descending => self.sort_type = SortType::Ascending,
+                    };
+                }
 
-                        row.col(|ui| {
-                            ui.label(process.name.to_string());
-                        });
+                let filter = match self.filter {
+                    FilterType::All => "Shown: All processes".to_string(),
+                    FilterType::User => "Shown: User processes".to_string(),
+                    FilterType::System => "Shown: System processes".to_string(),
+                };
 
-                        // Col 2: CPU
-                        row.col(|ui| {
-                            ui.label(format!("{}%", process.cpu));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    egui::ComboBox::from_label("")
+                        .selected_text(filter)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.filter, FilterType::All, "All processes");
+                            ui.selectable_value(
+                                &mut self.filter,
+                                FilterType::User,
+                                "User processes",
+                            );
+                            ui.selectable_value(
+                                &mut self.filter,
+                                FilterType::System,
+                                "System processes",
+                            );
                         });
-
-                        // Col 3: Memory
-                        row.col(|ui| {
-                            ui.label(format!("{:.1} MB", process.memory));
-                        });
-
-                        // Col 4: Path
-                        row.col(|ui| {
-                            ui.label(process.exe.to_string());
-                        });
-
-                        // Col 5: Username
-                        row.col(|ui| {
-                            ui.label(process.user.to_string());
-                        });
-                    });
                 });
+            });
+
+            let viewer = TaskManager::data_table_view(
+                &self.stats.processes,
+                self.criteria,
+                self.sort_type,
+                self.filter,
+                &self.user,
+            );
+            
+            Self::table_drawer(ui, &viewer, &self.stats);
         });
 
         ctx.request_repaint_after(time::Duration::from_millis(1000));
