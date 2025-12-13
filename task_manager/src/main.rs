@@ -25,6 +25,12 @@ enum SortType {
     Descending,
 }
 
+#[derive(PartialEq, Clone, Copy)]
+enum ViewType {
+    Table,
+    Tree,
+}
+
 struct TaskManager {
     rx: Receiver<SysStats>,
     stats: SysStats,
@@ -32,6 +38,7 @@ struct TaskManager {
     sort_type: SortType,
     filter: FilterType,
     user: String,
+    view_type: ViewType,
     open: HashSet<u32>,
 }
 
@@ -87,8 +94,127 @@ impl TaskManager {
 
         view
     }
-    fn table_drawer(ui: &mut egui::Ui, viewer: &[&ProcessInfo], stats: &SysStats) {
+    fn data_tree_view<'a>(
+        processes: &'a [ProcessInfo],
+        crit: SortCriteria,
+        sort_type: SortType,
+        filter: FilterType,
+        username: &String,
+        open: &HashSet<u32>,
+    ) -> Vec<(&'a ProcessInfo, u8)> {
+        let mut view: Vec<(&ProcessInfo, u8)> = Vec::new();
+
+        struct SortFilters<'a> {
+            crit: SortCriteria,
+            sort_type: SortType,
+            filter: FilterType,
+            username: &'a String,
+        }
+
+        let filt: SortFilters = SortFilters {
+            crit,
+            sort_type,
+            filter,
+            username
+        };
+
+        fn dfs<'a>(
+            process: &'a [ProcessInfo],
+            depth: u8,
+            res: &mut Vec<(&'a ProcessInfo, u8)>,
+            open: &HashSet<u32>,
+            filt: &SortFilters<'_>
+        ) {
+            let mut level: Vec<&ProcessInfo> = process.iter().collect();
+
+            level.sort_by(|a, b| match (filt.crit, filt.sort_type) {
+                (SortCriteria::Cpu, SortType::Descending) => {
+                    b.cpu.partial_cmp(&a.cpu).unwrap_or(Ordering::Equal)
+                }
+                (SortCriteria::Cpu, SortType::Ascending) => {
+                    a.cpu.partial_cmp(&b.cpu).unwrap_or(Ordering::Equal)
+                }
+                (SortCriteria::Memory, SortType::Descending) => {
+                    b.memory.partial_cmp(&a.memory).unwrap_or(Ordering::Equal)
+                }
+                (SortCriteria::Memory, SortType::Ascending) => {
+                    a.memory.partial_cmp(&b.memory).unwrap_or(Ordering::Equal)
+                }
+                (SortCriteria::Name, SortType::Ascending) => {
+                    b.name.partial_cmp(&a.name).unwrap_or(Ordering::Equal)
+                }
+                (SortCriteria::Name, SortType::Descending) => {
+                    a.name.partial_cmp(&b.name).unwrap_or(Ordering::Equal)
+                }
+            });
+
+            for proc in level {
+                match (filt.filter, &proc.user) {
+                    (FilterType::All, _) => {
+                        res.push((proc, depth));
+                        if open.contains(&proc.pid) {
+                            dfs(
+                                &proc.child,
+                                depth + 1,
+                                res,
+                                open,
+                                filt
+                            );
+                        }
+                    },
+                    (FilterType::User, user) if user == filt.username => {
+                        res.push((proc, depth));
+                        if open.contains(&proc.pid) {
+                            dfs(
+                                &proc.child,
+                                depth + 1,
+                                res,
+                                open,
+                                filt,
+                            );
+                        }
+                    },
+                    (FilterType::System, user) if user != filt.username => {
+                        res.push((proc, depth));
+                        if open.contains(&proc.pid) {
+                            dfs(
+                                &proc.child,
+                                depth + 1,
+                                res,
+                                open,
+                                filt,
+                            );
+                        }
+                    },
+                    _ => {
+                        dfs(
+                                &proc.child,
+                                depth,
+                                res,
+                                open,
+                                filt,
+                            )
+                    },
+                };
+            }
+        }
+
+        dfs(
+            processes, 0, &mut view, open, &filt
+        );
+
+        view
+    }
+    fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, crit: SortCriteria, sort_type: SortType, filter: FilterType, username: &String) {
         let width = ui.available_width();
+
+        let viewer = TaskManager::data_table_view(
+                &stats.processes,
+                crit,
+                sort_type,
+                filter,
+                username,
+            );
 
         TableBuilder::new(ui)
             .vscroll(true)
@@ -159,6 +285,111 @@ impl TaskManager {
                 });
             });
     }
+    fn tree_drawer(ui: &mut egui::Ui, stats: &SysStats,  crit: SortCriteria, sort_type: SortType, filter: FilterType, username: &String, open: &mut HashSet<u32>) {
+        let width = ui.available_width();
+
+        let viewer = TaskManager::data_tree_view(
+                &stats.processes,
+                crit,
+                sort_type,
+                filter,
+                username,
+                open
+            );
+
+        TableBuilder::new(ui)
+            .vscroll(true)
+            .column(Column::initial(width * 0.2).resizable(true))
+            .column(Column::initial(width * 0.1).resizable(true))
+            .column(Column::initial(width * 0.2).resizable(true))
+            .column(Column::initial(width * 0.3).resizable(true))
+            .column(Column::initial(width * 0.15).resizable(true))
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.heading("Name");
+                    ui.separator();
+                });
+                header.col(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.heading("CPU");
+                        ui.label(format!("{:.1}%", stats.cpu));
+                    });
+                    ui.separator();
+                });
+                header.col(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.heading("Memory");
+                        ui.label(format!("{:.1}%", stats.mem));
+                    });
+                    ui.separator();
+                });
+                header.col(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.heading("Path");
+                    });
+                    ui.separator();
+                });
+                header.col(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.heading("Username");
+                    });
+                    ui.separator();
+                });
+            })
+            .body(|body| {
+                let height = 50.0;
+                let num = viewer.len();
+
+                body.rows(height, num, |mut row| {
+                    let index = row.index();
+                    let (process, depth) = viewer[index];
+
+                    row.col(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_space(depth as f32 * 20.0);
+                            if !process.child.is_empty() {
+                                let arrow = if open.contains(&process.pid) {
+                                    "v"
+                                }
+                                else {
+                                    ">"
+                                };
+
+                                if ui.button(arrow).clicked() {
+                                    if open.contains(&process.pid) {
+                                        open.remove(&process.pid);
+                                    }
+                                    else {
+                                        open.insert(process.pid);
+                                    }
+                                }
+                            }
+                            else {
+                                ui.add_space(20.0);
+                            }
+
+                            ui.label(process.name.to_string());
+                        });
+                    });
+
+                    row.col(|ui| {
+                        ui.label(format!("{:.2}%", process.cpu));
+                    });
+
+                    row.col(|ui| {
+                        ui.label(format!("{:.1} MB", process.memory));
+                    });
+
+                    row.col(|ui| {
+                        ui.label(process.exe.to_string());
+                    });
+
+                    row.col(|ui| {
+                        ui.label(process.user.to_string());
+                    });
+                });
+            });
+    }
 }
 
 impl Default for TaskManager {
@@ -189,6 +420,7 @@ impl Default for TaskManager {
             criteria: SortCriteria::Cpu,
             sort_type: SortType::Descending,
             filter: FilterType::User,
+            view_type: ViewType::Table,
             user,
             open: HashSet::new(),
         }
@@ -281,18 +513,28 @@ impl eframe::App for TaskManager {
                                 "System processes",
                             );
                         });
+
+                    if ui
+                        .selectable_label(self.view_type == ViewType::Table, "Table")
+                        .clicked()
+                    {
+                        self.view_type = ViewType::Table;
+                    }
+
+                    if ui
+                        .selectable_label(self.view_type == ViewType::Tree, "Tree")
+                        .clicked()
+                    {
+                        self.view_type = ViewType::Tree;
+                    }
                 });
             });
 
-            let viewer = TaskManager::data_table_view(
-                &self.stats.processes,
-                self.criteria,
-                self.sort_type,
-                self.filter,
-                &self.user,
-            );
-            
-            Self::table_drawer(ui, &viewer, &self.stats);
+            if self.view_type == ViewType::Table {
+                Self::table_drawer(ui, &self.stats, self.criteria, self.sort_type, self.filter, &self.user);
+            } else {
+                Self::tree_drawer(ui, &self.stats, self.criteria, self.sort_type, self.filter, &self.user, &mut self.open);
+            }
         });
 
         ctx.request_repaint_after(time::Duration::from_millis(1000));
