@@ -2,7 +2,7 @@ mod backend;
 use crate::backend::gatherer::{InfoGetter, Monitor, ProcessInfo, SysStats};
 use ::std::sync::mpsc::{self, Receiver};
 use ::std::{cmp::Ordering, collections::HashSet, env::var, thread, thread::sleep, time};
-use eframe::egui::{self, CentralPanel, Context, FontFamily, FontId, TextStyle};
+use eframe::egui::{self, CentralPanel, Color32, Context, FontFamily, FontId, TextStyle, Visuals};
 use egui_extras::{Column, TableBuilder};
 
 #[derive(PartialEq, Clone, Copy)]
@@ -115,7 +115,7 @@ impl TaskManager {
             crit,
             sort_type,
             filter,
-            username
+            username,
         };
 
         fn dfs<'a>(
@@ -123,7 +123,7 @@ impl TaskManager {
             depth: u8,
             res: &mut Vec<(&'a ProcessInfo, u8)>,
             open: &HashSet<u32>,
-            filt: &SortFilters<'_>
+            filt: &SortFilters<'_>,
         ) {
             let mut level: Vec<&ProcessInfo> = process.iter().collect();
 
@@ -153,68 +153,42 @@ impl TaskManager {
                     (FilterType::All, _) => {
                         res.push((proc, depth));
                         if open.contains(&proc.pid) {
-                            dfs(
-                                &proc.child,
-                                depth + 1,
-                                res,
-                                open,
-                                filt
-                            );
+                            dfs(&proc.child, depth + 1, res, open, filt);
                         }
-                    },
+                    }
                     (FilterType::User, user) if user == filt.username => {
                         res.push((proc, depth));
                         if open.contains(&proc.pid) {
-                            dfs(
-                                &proc.child,
-                                depth + 1,
-                                res,
-                                open,
-                                filt,
-                            );
+                            dfs(&proc.child, depth + 1, res, open, filt);
                         }
-                    },
+                    }
                     (FilterType::System, user) if user != filt.username => {
                         res.push((proc, depth));
                         if open.contains(&proc.pid) {
-                            dfs(
-                                &proc.child,
-                                depth + 1,
-                                res,
-                                open,
-                                filt,
-                            );
+                            dfs(&proc.child, depth + 1, res, open, filt);
                         }
-                    },
-                    _ => {
-                        dfs(
-                                &proc.child,
-                                depth,
-                                res,
-                                open,
-                                filt,
-                            )
-                    },
+                    }
+                    _ => dfs(&proc.child, depth, res, open, filt),
                 };
             }
         }
 
-        dfs(
-            processes, 0, &mut view, open, &filt
-        );
+        dfs(processes, 0, &mut view, open, &filt);
 
         view
     }
-    fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, crit: SortCriteria, sort_type: SortType, filter: FilterType, username: &String) {
+    fn table_drawer(
+        ui: &mut egui::Ui,
+        stats: &SysStats,
+        crit: SortCriteria,
+        sort_type: SortType,
+        filter: FilterType,
+        username: &String,
+    ) {
         let width = ui.available_width();
 
-        let viewer = TaskManager::data_table_view(
-                &stats.processes,
-                crit,
-                sort_type,
-                filter,
-                username,
-            );
+        let viewer =
+            TaskManager::data_table_view(&stats.processes, crit, sort_type, filter, username);
 
         TableBuilder::new(ui)
             .vscroll(true)
@@ -285,17 +259,19 @@ impl TaskManager {
                 });
             });
     }
-    fn tree_drawer(ui: &mut egui::Ui, stats: &SysStats,  crit: SortCriteria, sort_type: SortType, filter: FilterType, username: &String, open: &mut HashSet<u32>) {
+    fn tree_drawer(
+        ui: &mut egui::Ui,
+        stats: &SysStats,
+        crit: SortCriteria,
+        sort_type: SortType,
+        filter: FilterType,
+        username: &String,
+        open: &mut HashSet<u32>,
+    ) {
         let width = ui.available_width();
 
-        let viewer = TaskManager::data_tree_view(
-                &stats.processes,
-                crit,
-                sort_type,
-                filter,
-                username,
-                open
-            );
+        let viewer =
+            TaskManager::data_tree_view(&stats.processes, crit, sort_type, filter, username, open);
 
         TableBuilder::new(ui)
             .vscroll(true)
@@ -346,25 +322,36 @@ impl TaskManager {
 
                     row.col(|ui| {
                         ui.horizontal(|ui| {
+                            let painter = ui.painter();
+
+                            //painter.line_segment([ui.max_rect().left_top() + egui::vec2(depth as f32 * 20.0, 0.0), ui.max_rect().left_bottom() + egui::vec2(depth as f32 * 20.0, 0.0)], egui::Stroke::new(1.0, egui::Color32::RED));
+                            painter.line_segment(
+                                [
+                                    egui::pos2(ui.available_rect_before_wrap().left() + depth as f32 * 20.0 + 7.0, ui.available_rect_before_wrap().top()), 
+                                    egui::pos2(ui.available_rect_before_wrap().left() + depth as f32 * 20.0  + 7.0, ui.available_rect_before_wrap().bottom() + 35.0),
+                                ],
+                                egui::Stroke::new(1.0, egui::Color32::RED)
+                            );
+                            painter.line_segment(
+                                [ui.available_rect_before_wrap().left_center() + egui::vec2((depth + 1) as f32 * 20.0 - 12.0, 0.0), ui.available_rect_before_wrap().left_center() + egui::vec2((depth + 1) as f32 * 20.0 - 2.0, 0.0)], 
+                                egui::Stroke::new(1.0, egui::Color32::RED)
+                            );
                             ui.add_space(depth as f32 * 20.0);
                             if !process.child.is_empty() {
                                 let arrow = if open.contains(&process.pid) {
                                     "v"
-                                }
-                                else {
+                                } else {
                                     ">"
                                 };
 
                                 if ui.button(arrow).clicked() {
                                     if open.contains(&process.pid) {
                                         open.remove(&process.pid);
-                                    }
-                                    else {
+                                    } else {
                                         open.insert(process.pid);
                                     }
                                 }
-                            }
-                            else {
+                            } else {
                                 ui.add_space(20.0);
                             }
 
@@ -381,7 +368,7 @@ impl TaskManager {
                     });
 
                     row.col(|ui| {
-                        ui.label(process.exe.to_string());
+                        ui.add(egui::Label::new(&process.exe).truncate());
                     });
 
                     row.col(|ui| {
@@ -434,7 +421,7 @@ impl eframe::App for TaskManager {
             println!("Refresh done");
         }
 
-        set_styles(ctx);
+        //set_styles(ctx);
         CentralPanel::default().show(ctx, |ui| {
             ui.heading("Hello from aplication");
             ui.separator();
@@ -531,9 +518,24 @@ impl eframe::App for TaskManager {
             });
 
             if self.view_type == ViewType::Table {
-                Self::table_drawer(ui, &self.stats, self.criteria, self.sort_type, self.filter, &self.user);
+                Self::table_drawer(
+                    ui,
+                    &self.stats,
+                    self.criteria,
+                    self.sort_type,
+                    self.filter,
+                    &self.user,
+                );
             } else {
-                Self::tree_drawer(ui, &self.stats, self.criteria, self.sort_type, self.filter, &self.user, &mut self.open);
+                Self::tree_drawer(
+                    ui,
+                    &self.stats,
+                    self.criteria,
+                    self.sort_type,
+                    self.filter,
+                    &self.user,
+                    &mut self.open,
+                );
             }
         });
 
@@ -541,13 +543,31 @@ impl eframe::App for TaskManager {
     }
 }
 
-fn set_styles(ctx: &Context) {
-    let mut style = (*ctx.style()).clone();
-    style
-        .text_styles
-        .insert(TextStyle::Heading, FontId::new(20.0, FontFamily::Monospace));
+fn set_theme(ctx: &Context) {
+    let background = Color32::from_hex("#17141A").unwrap_or_default();
+    let background_light = Color32::from_hex("#221D26").unwrap_or_default();
+    let text = Color32::from_hex("#E6E1E8").unwrap_or_default();
+    let text_secondary = Color32::from_hex("#A83256").unwrap_or_default();
+    let highlight = Color32::from_hex("#E85D92").unwrap_or_default();
 
-    ctx.set_style(style);
+    let mut visuals = Visuals::dark();
+
+    visuals.window_fill = background;
+    visuals.panel_fill = background;
+    visuals.faint_bg_color = background_light;
+    visuals.extreme_bg_color = Color32::from_hex("#0a080c").unwrap_or_default();
+
+    visuals.selection.bg_fill = text_secondary;
+    //visuals.selection.stroke = egui::Stroke::new(1.0, highlight);
+
+    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, text);
+
+    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, text);
+    visuals.widgets.inactive.bg_fill = background_light;
+
+    visuals.widgets.hovered.bg_fill = highlight;
+
+    ctx.set_visuals(visuals);
 }
 
 fn main() -> Result<(), eframe::Error> {
@@ -563,6 +583,6 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "AICI",
         options,
-        Box::new(|_cc| Ok(Box::<TaskManager>::default())),
+        Box::new(|cc| {set_theme(&cc.egui_ctx); Ok(Box::<TaskManager>::default())}),
     )
 }
