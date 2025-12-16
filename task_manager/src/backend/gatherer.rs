@@ -54,7 +54,8 @@ impl InfoGetter for Monitor {
                 .with_cpu()
                 .with_user(UpdateKind::OnlyIfNotSet)
                 .with_memory()
-                .with_exe(UpdateKind::OnlyIfNotSet),
+                .with_exe(UpdateKind::OnlyIfNotSet)
+                .without_tasks(),
         );
 
         let mut families: HashMap<u32, Vec<ProcessInfo>> = HashMap::new();
