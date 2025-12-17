@@ -1,9 +1,11 @@
 mod backend;
 mod frontend;
 use crate::backend::gatherer::{InfoGetter, Monitor, SysStats};
-use crate::frontend::{ViewConfig, table_drawer::table_drawer, tree_drawer::tree_drawer};
+use crate::frontend::{
+    ViewConfig, overview_drawer::GraphDrawer, table_drawer::table_drawer, tree_drawer::tree_drawer,
+};
 use ::std::sync::mpsc::{self, Receiver};
-use ::std::{collections::HashSet, env::var, thread, thread::sleep, time};
+use ::std::{collections::HashSet, collections::VecDeque, env::var, thread, thread::sleep, time};
 use eframe::egui::{self, CentralPanel, Color32, Context, Visuals};
 
 #[derive(PartialEq, Clone, Copy)]
@@ -30,6 +32,7 @@ pub enum SortType {
 pub enum ViewType {
     Table,
     Tree,
+    Graphic,
 }
 
 struct TaskManager {
@@ -42,6 +45,9 @@ struct TaskManager {
     view_type: ViewType,
     open: HashSet<u32>,
     search: String,
+    ram_plot_points: VecDeque<f64>,
+    cpu_plot_points: VecDeque<f64>,
+    graph_draw: GraphDrawer,
 }
 
 impl Default for TaskManager {
@@ -68,6 +74,7 @@ impl Default for TaskManager {
                 processes: Vec::new(),
                 cpu: 0.0,
                 mem: 0.0,
+                used_mem: 0.0,
             },
             criteria: SortCriteria::Cpu,
             sort_type: SortType::Descending,
@@ -76,6 +83,9 @@ impl Default for TaskManager {
             user,
             open: HashSet::new(),
             search: String::new(),
+            ram_plot_points: VecDeque::new(),
+            cpu_plot_points: VecDeque::new(),
+            graph_draw: GraphDrawer::new(),
         }
     }
 }
@@ -85,6 +95,15 @@ impl eframe::App for TaskManager {
         match self.rx.try_recv() {
             Ok(data) => {
                 self.stats = data;
+                if self.cpu_plot_points.len() >= 120 || self.ram_plot_points.len() >= 120 {
+                    self.ram_plot_points.pop_front();
+                    self.cpu_plot_points.pop_front();
+                    self.ram_plot_points.push_back(self.stats.used_mem);
+                    self.cpu_plot_points.push_back(self.stats.cpu as f64);
+                } else {
+                    self.ram_plot_points.push_back(self.stats.used_mem);
+                    self.cpu_plot_points.push_back(self.stats.cpu as f64);
+                }
                 println!("Refresh done")
             }
             Err(mpsc::TryRecvError::Disconnected) => {
@@ -123,6 +142,12 @@ impl eframe::App for TaskManager {
                         .clicked()
                     {
                         self.view_type = ViewType::Tree;
+                    }
+                    if ui
+                        .selectable_label(self.view_type == ViewType::Graphic, "Overview")
+                        .clicked()
+                    {
+                        self.view_type = ViewType::Graphic;
                     }
                 });
                 ui.add(
@@ -182,7 +207,7 @@ impl eframe::App for TaskManager {
                                 SortType::Descending => self.sort_type = SortType::Ascending,
                             };
                         }
-                        
+
                         if ui
                             .selectable_label(self.criteria == SortCriteria::Memory, mem_label)
                             .clicked()
@@ -193,7 +218,7 @@ impl eframe::App for TaskManager {
                                 SortType::Descending => self.sort_type = SortType::Ascending,
                             };
                         }
-                        
+
                         if ui
                             .selectable_label(self.criteria == SortCriteria::Cpu, cpu_label)
                             .clicked()
@@ -210,59 +235,6 @@ impl eframe::App for TaskManager {
             });
             ui.separator();
 
-            ui.horizontal(|ui| {
-                let arrow = if self.sort_type == SortType::Ascending {
-                    "^"
-                } else {
-                    "v"
-                };
-                ui.label("Sort by:".to_string());
-                let cpu_label = match self.criteria {
-                    SortCriteria::Cpu => format!("{} CPU", arrow),
-                    _ => "CPU".to_string(),
-                };
-                let mem_label = match self.criteria {
-                    SortCriteria::Memory => format!("{} RAM", arrow),
-                    _ => "RAM".to_string(),
-                };
-                let name_label = match self.criteria {
-                    SortCriteria::Name => format!("{} Name", arrow),
-                    _ => "Name".to_string(),
-                };
-                if ui
-                    .selectable_label(self.criteria == SortCriteria::Cpu, cpu_label)
-                    .clicked()
-                {
-                    self.criteria = SortCriteria::Cpu;
-                    match self.sort_type {
-                        SortType::Ascending => self.sort_type = SortType::Descending,
-                        SortType::Descending => self.sort_type = SortType::Ascending,
-                    };
-                };
-
-                if ui
-                    .selectable_label(self.criteria == SortCriteria::Memory, mem_label)
-                    .clicked()
-                {
-                    self.criteria = SortCriteria::Memory;
-                    match self.sort_type {
-                        SortType::Ascending => self.sort_type = SortType::Descending,
-                        SortType::Descending => self.sort_type = SortType::Ascending,
-                    };
-                }
-
-                if ui
-                    .selectable_label(self.criteria == SortCriteria::Name, name_label)
-                    .clicked()
-                {
-                    self.criteria = SortCriteria::Name;
-                    match self.sort_type {
-                        SortType::Ascending => self.sort_type = SortType::Descending,
-                        SortType::Descending => self.sort_type = SortType::Ascending,
-                    };
-                }
-            });
-
             let config = ViewConfig {
                 criteria: self.criteria,
                 sort_type: self.sort_type,
@@ -272,10 +244,14 @@ impl eframe::App for TaskManager {
                 open: &mut self.open,
             };
 
-            if self.view_type == ViewType::Table {
-                table_drawer(ui, &self.stats, config);
-            } else {
-                tree_drawer(ui, &self.stats, config);
+            match self.view_type {
+                ViewType::Table => table_drawer(ui, &self.stats, config),
+                ViewType::Tree => tree_drawer(ui, &self.stats, config),
+                ViewType::Graphic => self.graph_draw.overview_drawer(
+                    ui,
+                    &self.ram_plot_points,
+                    &self.cpu_plot_points,
+                ),
             }
         });
 

@@ -15,6 +15,7 @@ pub struct SysStats {
     pub processes: Vec<ProcessInfo>,
     pub cpu: f32,
     pub mem: f64,
+    pub used_mem: f64,
 }
 
 pub struct Monitor {
@@ -120,6 +121,7 @@ impl InfoGetter for Monitor {
             processes: process_info,
             cpu,
             mem,
+            used_mem: self.sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
         }
     }
 

@@ -14,5 +14,6 @@ pub struct ViewConfig<'a> {
     pub open: &'a mut HashSet<u32>,
 }
 
+pub mod overview_drawer;
 pub mod table_drawer;
 pub mod tree_drawer;
