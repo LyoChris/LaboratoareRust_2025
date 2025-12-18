@@ -338,7 +338,7 @@ fn main() -> Result<(), eframe::Error> {
     };
 
     eframe::run_native(
-        "AICI",
+        "Task Manager",
         options,
         Box::new(|cc| {
             set_theme(&cc.egui_ctx);
