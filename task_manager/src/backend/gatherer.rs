@@ -13,9 +13,33 @@ pub struct ProcessInfo {
 
 pub struct SysStats {
     pub processes: Vec<ProcessInfo>,
+    pub sys_specifics: SysSpecifics,
     pub cpu: f32,
     pub mem: f64,
     pub used_mem: f64,
+}
+
+pub struct CpuSpecifics {
+    pub name: String,
+    pub processes: usize,
+    pub up_time: u64,
+    pub logical_cores: usize,
+    pub physical_cores: usize,
+    pub current_speed: f64,
+}
+
+pub struct MemSpecifics {
+    pub total: f64,
+    pub used: f64,
+    pub available: f64,
+    pub swap_total: f64,
+    pub swap_used: f64,
+    pub swap_available: f64,
+}
+
+pub struct SysSpecifics {
+    pub cpu_specifics: CpuSpecifics,
+    pub mem_specifics: MemSpecifics,
 }
 
 pub struct Monitor {
@@ -59,6 +83,9 @@ impl InfoGetter for Monitor {
                 .without_tasks(),
         );
 
+        self.sys.refresh_cpu_all();
+        self.sys.refresh_memory();
+
         let mut families: HashMap<u32, Vec<ProcessInfo>> = HashMap::new();
 
         for (pid, process) in self.sys.processes() {
@@ -80,10 +107,7 @@ impl InfoGetter for Monitor {
             };
 
             match process.exe() {
-                Some(path) => match path.to_str() {
-                    Some(correct_path) => info.exe = correct_path.to_string(),
-                    None => info.exe = "Unknown".to_string(),
-                },
+                Some(path) => info.exe = path.to_string_lossy().into_owned(),
                 None => info.exe = "Unknown".to_string(),
             }
 
@@ -113,12 +137,35 @@ impl InfoGetter for Monitor {
             process_info.append(&mut processe);
         }
 
-        self.sys.refresh_cpu_all();
         let cpu = self.sys.global_cpu_usage();
         let mem = (self.sys.used_memory() as f64 / self.sys.total_memory() as f64) * 100.0;
 
+        let cpu_point = self.sys.cpus().first();
+
+        let sys_specifics = SysSpecifics {
+            cpu_specifics: CpuSpecifics {
+                name: cpu_point
+                    .map(|cpu| cpu.brand().to_string())
+                    .unwrap_or("Unknown CPU type".to_string()),
+                processes: self.sys.processes().len(),
+                up_time: System::uptime(),
+                logical_cores: self.sys.cpus().len(),
+                physical_cores: System::physical_core_count().unwrap_or_default(),
+                current_speed: cpu_point.map(|cpu| cpu.frequency()).unwrap_or(0) as f64 / 1000.0,
+            },
+            mem_specifics: MemSpecifics {
+                total: self.sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
+                used: self.sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
+                available: self.sys.available_memory() as f64 / 1024.0 / 1024.0 / 1024.0,
+                swap_total: self.sys.total_swap() as f64 / 1024.0 / 1024.0 / 1024.0,
+                swap_used: self.sys.used_swap() as f64 / 1024.0 / 1024.0 / 1024.0,
+                swap_available: self.sys.free_swap() as f64 / 1024.0 / 1024.0 / 1024.0,
+            },
+        };
+
         SysStats {
             processes: process_info,
+            sys_specifics,
             cpu,
             mem,
             used_mem: self.sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0,

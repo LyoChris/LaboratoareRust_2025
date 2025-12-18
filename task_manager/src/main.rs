@@ -1,6 +1,8 @@
 mod backend;
 mod frontend;
-use crate::backend::gatherer::{InfoGetter, Monitor, SysStats};
+use crate::backend::gatherer::{
+    CpuSpecifics, InfoGetter, MemSpecifics, Monitor, SysSpecifics, SysStats,
+};
 use crate::frontend::{
     ViewConfig, overview_drawer::GraphDrawer, table_drawer::table_drawer, tree_drawer::tree_drawer,
 };
@@ -72,6 +74,25 @@ impl Default for TaskManager {
             rx,
             stats: SysStats {
                 processes: Vec::new(),
+                sys_specifics: SysSpecifics {
+                    cpu_specifics: CpuSpecifics {
+                        name: String::new(),
+                        processes: 0,
+                        up_time: 0,
+                        logical_cores: 0,
+                        physical_cores: 0,
+                        current_speed: 0.0,
+                    },
+                    mem_specifics: MemSpecifics {
+                        total: 0.0,
+                        used: 0.0,
+                        available: 0.0,
+                        swap_total: 0.0,
+                        swap_used: 0.0,
+                        swap_available: 0.0,
+                    },
+                },
+
                 cpu: 0.0,
                 mem: 0.0,
                 used_mem: 0.0,
@@ -131,28 +152,38 @@ impl eframe::App for TaskManager {
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     if ui
-                        .selectable_label(self.view_type == ViewType::Table, "Table")
+                        .selectable_label(
+                            self.view_type == ViewType::Table,
+                            egui::RichText::new("Table").size(14.0),
+                        )
                         .clicked()
                     {
                         self.view_type = ViewType::Table;
                     }
 
                     if ui
-                        .selectable_label(self.view_type == ViewType::Tree, "Tree")
+                        .selectable_label(
+                            self.view_type == ViewType::Tree,
+                            egui::RichText::new("Tree").size(14.0),
+                        )
                         .clicked()
                     {
                         self.view_type = ViewType::Tree;
                     }
                     if ui
-                        .selectable_label(self.view_type == ViewType::Graphic, "Overview")
+                        .selectable_label(
+                            self.view_type == ViewType::Graphic,
+                            egui::RichText::new("Overview").size(14.0),
+                        )
                         .clicked()
                     {
                         self.view_type = ViewType::Graphic;
                     }
                 });
                 ui.add(
-                    egui::TextEdit::singleline(&mut self.search)
-                        .hint_text("Start typing to search processes"),
+                    egui::TextEdit::singleline(&mut self.search).hint_text(
+                        egui::RichText::new("Start typing to search processes").size(14.0),
+                    ),
                 );
 
                 let filter = match self.filter {
@@ -163,18 +194,22 @@ impl eframe::App for TaskManager {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     egui::ComboBox::from_label("")
-                        .selected_text(filter)
+                        .selected_text(egui::RichText::new(filter).size(14.0))
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.filter, FilterType::All, "All processes");
+                            ui.selectable_value(
+                                &mut self.filter,
+                                FilterType::All,
+                                egui::RichText::new("All processes").size(14.0),
+                            );
                             ui.selectable_value(
                                 &mut self.filter,
                                 FilterType::User,
-                                "User processes",
+                                egui::RichText::new("User processes").size(14.0),
                             );
                             ui.selectable_value(
                                 &mut self.filter,
                                 FilterType::System,
-                                "System processes",
+                                egui::RichText::new("System processes").size(14.0),
                             );
                         });
 
@@ -198,7 +233,10 @@ impl eframe::App for TaskManager {
                         };
 
                         if ui
-                            .selectable_label(self.criteria == SortCriteria::Name, name_label)
+                            .selectable_label(
+                                self.criteria == SortCriteria::Name,
+                                egui::RichText::new(name_label).size(14.0),
+                            )
                             .clicked()
                         {
                             self.criteria = SortCriteria::Name;
@@ -209,7 +247,10 @@ impl eframe::App for TaskManager {
                         }
 
                         if ui
-                            .selectable_label(self.criteria == SortCriteria::Memory, mem_label)
+                            .selectable_label(
+                                self.criteria == SortCriteria::Memory,
+                                egui::RichText::new(mem_label).size(14.0),
+                            )
                             .clicked()
                         {
                             self.criteria = SortCriteria::Memory;
@@ -220,7 +261,10 @@ impl eframe::App for TaskManager {
                         }
 
                         if ui
-                            .selectable_label(self.criteria == SortCriteria::Cpu, cpu_label)
+                            .selectable_label(
+                                self.criteria == SortCriteria::Cpu,
+                                egui::RichText::new(cpu_label).size(14.0),
+                            )
                             .clicked()
                         {
                             self.criteria = SortCriteria::Cpu;
@@ -229,7 +273,7 @@ impl eframe::App for TaskManager {
                                 SortType::Descending => self.sort_type = SortType::Ascending,
                             };
                         };
-                        ui.label("Sort by:".to_string());
+                        ui.label(egui::RichText::new("Sort by:").size(14.0));
                     });
                 });
             });
@@ -251,6 +295,7 @@ impl eframe::App for TaskManager {
                     ui,
                     &self.ram_plot_points,
                     &self.cpu_plot_points,
+                    &self.stats.sys_specifics,
                 ),
             }
         });
@@ -274,13 +319,12 @@ fn set_theme(ctx: &Context) {
     visuals.extreme_bg_color = Color32::from_hex("#0a080c").unwrap_or_default();
 
     visuals.selection.bg_fill = accent;
-    //visuals.selection.stroke = egui::Stroke::new(1.0, highlight);
 
     visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, text);
     visuals.widgets.active.bg_fill = highlight;
     visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, Color32::BLACK);
 
-    visuals.widgets.hovered.bg_fill = highlight;
+    visuals.widgets.hovered.bg_fill = Color32::RED;
 
     ctx.set_visuals(visuals);
 }

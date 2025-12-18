@@ -17,14 +17,14 @@ fn data_table_view<'a>(processes: &'a [ProcessInfo], config: &ViewConfig) -> Vec
 
     for proc in list_from_tree {
         match (config.filter, &proc.user) {
-            (FilterType::All, _) if proc.name.to_lowercase().contains(&search) => view.push(proc),
+            (FilterType::All, _) if (proc.name.to_lowercase().contains(&search) || proc.user.to_lowercase().contains(&search) || proc.pid.to_string().to_lowercase().contains(&search))=> {view.push(proc)},
             (FilterType::User, user)
-                if user == config.username && proc.name.to_lowercase().contains(&search) =>
+                if user == config.username && (proc.name.to_lowercase().contains(&search) || proc.user.to_lowercase().contains(&search) || proc.pid.to_string().to_lowercase().contains(&search)) =>
             {
                 view.push(proc)
             }
             (FilterType::System, user)
-                if user != config.username && proc.name.to_lowercase().contains(&search) =>
+                if user != config.username && (proc.name.to_lowercase().contains(&search) || proc.user.to_lowercase().contains(&search) || proc.pid.to_string().to_lowercase().contains(&search)) =>
             {
                 view.push(proc)
             }
@@ -251,6 +251,164 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                             )
                             .truncate(),
                         );
+                    });
+                });
+
+                row.response().context_menu(|ui| {
+                    if ui
+                        .add(egui::Button::new("Kill process").min_size(egui::vec2(140.0, 25.0)))
+                        .clicked()
+                    {
+                        Command::new("kill")
+                            .arg(process.pid.to_string())
+                            .output()
+                            .expect("Couldn't kill the process");
+                        ui.close_menu();
+                    }
+                    if ui
+                        .add(egui::Button::new("Copy path").min_size(egui::vec2(140.0, 25.0)))
+                        .clicked()
+                    {
+                        ui.output_mut(|o| o.copied_text = process.exe.clone());
+                        ui.close_menu();
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new("Copy process name")
+                                .min_size(egui::vec2(140.0, 25.0)),
+                        )
+                        .clicked()
+                    {
+                        ui.output_mut(|o| o.copied_text = process.name.clone());
+                        ui.close_menu();
+                    }
+                    if ui
+                        .add(egui::Button::new("Open location").min_size(egui::vec2(140.0, 25.0)))
+                        .clicked()
+                    {
+                        let process_path = Path::new(&process.exe);
+
+                        if let Some(path) = process_path.parent() {
+                            Command::new("xdg-open")
+                                .arg(path)
+                                .output()
+                                .expect("Couldn't open directory");
+                        } else {
+                            println!("Couldn't open directory");
+                        }
+
+                        ui.close_menu();
+                    }
+                    ui.menu_button("Send Signal", |ui| {
+                        ui.set_min_height(25.00);
+                        if ui
+                            .add(
+                                egui::Button::new("Suspend (STOP)")
+                                    .min_size(egui::vec2(140.0, 25.0)),
+                            )
+                            .clicked()
+                        {
+                            Command::new("kill")
+                                .arg("-STOP")
+                                .arg(process.pid.to_string())
+                                .output()
+                                .expect("Couldn't send signal");
+                            ui.close_menu();
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new("Continue (CONT)")
+                                    .min_size(egui::vec2(140.0, 25.0)),
+                            )
+                            .clicked()
+                        {
+                            Command::new("kill")
+                                .arg("-CONT")
+                                .arg(process.pid.to_string())
+                                .output()
+                                .expect("Couldn't send signal");
+                            ui.close_menu();
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new("Hangup (HUP)").min_size(egui::vec2(140.0, 25.0)),
+                            )
+                            .clicked()
+                        {
+                            Command::new("kill")
+                                .arg("-HUP")
+                                .arg(process.pid.to_string())
+                                .output()
+                                .expect("Couldn't send signal");
+                            ui.close_menu();
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new("Interrupt (INT)")
+                                    .min_size(egui::vec2(140.0, 25.0)),
+                            )
+                            .clicked()
+                        {
+                            Command::new("kill")
+                                .arg("-INT")
+                                .arg(process.pid.to_string())
+                                .output()
+                                .expect("Couldn't send signal");
+                            ui.close_menu();
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new("Terminate (TERM)")
+                                    .min_size(egui::vec2(140.0, 25.0)),
+                            )
+                            .clicked()
+                        {
+                            Command::new("kill")
+                                .arg("-TERM")
+                                .arg(process.pid.to_string())
+                                .output()
+                                .expect("Couldn't send signal");
+                            ui.close_menu();
+                        }
+                        if ui
+                            .add(egui::Button::new("Kill (KILL)").min_size(egui::vec2(140.0, 25.0)))
+                            .clicked()
+                        {
+                            Command::new("kill")
+                                .arg("-KILL")
+                                .arg(process.pid.to_string())
+                                .output()
+                                .expect("Couldn't send signal");
+                            ui.close_menu();
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new("User 1 (USR1)")
+                                    .min_size(egui::vec2(140.0, 25.0)),
+                            )
+                            .clicked()
+                        {
+                            Command::new("kill")
+                                .arg("-USR1")
+                                .arg(process.pid.to_string())
+                                .output()
+                                .expect("Couldn't send signal");
+                            ui.close_menu();
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new("User 2 (USR2)")
+                                    .min_size(egui::vec2(140.0, 25.0)),
+                            )
+                            .clicked()
+                        {
+                            Command::new("kill")
+                                .arg("-USR2")
+                                .arg(process.pid.to_string())
+                                .output()
+                                .expect("Couldn't send signal");
+                            ui.close_menu();
+                        }
                     });
                 });
             });
