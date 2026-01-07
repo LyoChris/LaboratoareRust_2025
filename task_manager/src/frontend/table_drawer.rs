@@ -17,14 +17,26 @@ fn data_table_view<'a>(processes: &'a [ProcessInfo], config: &ViewConfig) -> Vec
 
     for proc in list_from_tree {
         match (config.filter, &proc.user) {
-            (FilterType::All, _) if (proc.name.to_lowercase().contains(&search) || proc.user.to_lowercase().contains(&search) || proc.pid.to_string().to_lowercase().contains(&search))=> {view.push(proc)},
+            (FilterType::All, _)
+                if (proc.name.to_lowercase().contains(&search)
+                    || proc.user.to_lowercase().contains(&search)
+                    || proc.pid.to_string().to_lowercase().contains(&search)) =>
+            {
+                view.push(proc)
+            }
             (FilterType::User, user)
-                if user == config.username && (proc.name.to_lowercase().contains(&search) || proc.user.to_lowercase().contains(&search) || proc.pid.to_string().to_lowercase().contains(&search)) =>
+                if user == config.username
+                    && (proc.name.to_lowercase().contains(&search)
+                        || proc.user.to_lowercase().contains(&search)
+                        || proc.pid.to_string().to_lowercase().contains(&search)) =>
             {
                 view.push(proc)
             }
             (FilterType::System, user)
-                if user != config.username && (proc.name.to_lowercase().contains(&search) || proc.user.to_lowercase().contains(&search) || proc.pid.to_string().to_lowercase().contains(&search)) =>
+                if user != config.username
+                    && (proc.name.to_lowercase().contains(&search)
+                        || proc.user.to_lowercase().contains(&search)
+                        || proc.pid.to_string().to_lowercase().contains(&search)) =>
             {
                 view.push(proc)
             }
@@ -259,10 +271,12 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                         .add(egui::Button::new("Kill process").min_size(egui::vec2(140.0, 25.0)))
                         .clicked()
                     {
-                        Command::new("kill")
-                            .arg(process.pid.to_string())
-                            .output()
-                            .expect("Couldn't kill the process");
+                        match Command::new("kill").arg(process.pid.to_string()).status() {
+                            Ok(_) => {}
+                            Err(e) => {
+                                eprintln!("Failed to execute: {e}");
+                            }
+                        }
                         ui.close_menu();
                     }
                     if ui
@@ -289,10 +303,12 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                         let process_path = Path::new(&process.exe);
 
                         if let Some(path) = process_path.parent() {
-                            Command::new("xdg-open")
-                                .arg(path)
-                                .output()
-                                .expect("Couldn't open directory");
+                            match Command::new("xdg-open").arg(path).status() {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                         } else {
                             println!("Couldn't open directory");
                         }
@@ -308,11 +324,16 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                             )
                             .clicked()
                         {
-                            Command::new("kill")
+                            match Command::new("kill")
                                 .arg("-STOP")
                                 .arg(process.pid.to_string())
-                                .output()
-                                .expect("Couldn't send signal");
+                                .status()
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                             ui.close_menu();
                         }
                         if ui
@@ -322,11 +343,16 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                             )
                             .clicked()
                         {
-                            Command::new("kill")
+                            match Command::new("kill")
                                 .arg("-CONT")
                                 .arg(process.pid.to_string())
-                                .output()
-                                .expect("Couldn't send signal");
+                                .status()
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                             ui.close_menu();
                         }
                         if ui
@@ -335,11 +361,16 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                             )
                             .clicked()
                         {
-                            Command::new("kill")
+                            match Command::new("kill")
                                 .arg("-HUP")
                                 .arg(process.pid.to_string())
-                                .output()
-                                .expect("Couldn't send signal");
+                                .status()
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                             ui.close_menu();
                         }
                         if ui
@@ -349,11 +380,16 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                             )
                             .clicked()
                         {
-                            Command::new("kill")
+                            match Command::new("kill")
                                 .arg("-INT")
                                 .arg(process.pid.to_string())
-                                .output()
-                                .expect("Couldn't send signal");
+                                .status()
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                             ui.close_menu();
                         }
                         if ui
@@ -363,22 +399,32 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                             )
                             .clicked()
                         {
-                            Command::new("kill")
+                            match Command::new("kill")
                                 .arg("-TERM")
                                 .arg(process.pid.to_string())
-                                .output()
-                                .expect("Couldn't send signal");
+                                .status()
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                             ui.close_menu();
                         }
                         if ui
                             .add(egui::Button::new("Kill (KILL)").min_size(egui::vec2(140.0, 25.0)))
                             .clicked()
                         {
-                            Command::new("kill")
+                            match Command::new("kill")
                                 .arg("-KILL")
                                 .arg(process.pid.to_string())
-                                .output()
-                                .expect("Couldn't send signal");
+                                .status()
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                             ui.close_menu();
                         }
                         if ui
@@ -388,11 +434,16 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                             )
                             .clicked()
                         {
-                            Command::new("kill")
+                            match Command::new("kill")
                                 .arg("-USR1")
                                 .arg(process.pid.to_string())
-                                .output()
-                                .expect("Couldn't send signal");
+                                .status()
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                             ui.close_menu();
                         }
                         if ui
@@ -402,11 +453,16 @@ pub fn table_drawer(ui: &mut egui::Ui, stats: &SysStats, config: ViewConfig) {
                             )
                             .clicked()
                         {
-                            Command::new("kill")
+                            match Command::new("kill")
                                 .arg("-USR2")
                                 .arg(process.pid.to_string())
-                                .output()
-                                .expect("Couldn't send signal");
+                                .status()
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    eprintln!("Failed to execute: {e}");
+                                }
+                            }
                             ui.close_menu();
                         }
                     });
